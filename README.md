@@ -2,7 +2,7 @@
 
 Bytecode patch for the client-only mod
 [Spyglass Astronomy](https://github.com/Nettakrim/Spyglass-Astronomy)
-(`automodpack/host-modpack/main/mods/spyglass_astronomy-1.0.25-mc26.1.2.jar`),
+(`automodpack/host-modpack/main/mods/spyglass_astronomy-1.0.27-mc26.1.2.jar`),
 fixing a crash that fires on every single resource pack reload.
 
 ## The bug
@@ -25,12 +25,16 @@ pack." Left in that half-torn-down render state, later font/texture
 uploads have been observed to segfault the JVM natively (`SIGSEGV`
 inside `GlyphStitcher`/`nglTexSubImage2D`).
 
-Confirmed via the GitHub API (2026-09-18) that no released version
-fixes this, including the unreleased tip of `main` as of that date. A
-related commit (`a7480aa`, "fixed crash when reloading resource packs
-at night") only fixes double-closing of the buffers *inside*
-`SpaceRenderingManager.close()` — it assumes the manager itself
-already exists, and doesn't guard the mixin's own call to it.
+Confirmed via the GitHub API (2026-09-18, re-checked 2026-09-23 against
+`main` tip `298aa5c` after upstream released 1.0.27) that no released
+version fixes this. A related commit (`a7480aa`, "fixed crash when
+reloading resource packs at night") only fixes double-closing of the
+buffers *inside* `SpaceRenderingManager.close()` — it assumes the
+manager itself already exists, and doesn't guard the mixin's own call
+to it. A second, different null-check fix landed in `65dd78c` ("fixed
+crash on first time cosmos load") but that guards
+`CosmosConfigMixin.regenerateStars()`, an entirely different method —
+`closeBuffers()` itself is still byte-for-byte unguarded as of 1.0.27.
 
 ## The fix
 
@@ -65,11 +69,22 @@ python3 patch.py <input jar> <output jar>
 If Spyglass Astronomy ever gets updated, re-derive the byte offset with
 `javap -p -c` against the new `SkyRendererMixin.class` before assuming
 this pattern still matches — check upstream first too, since this may
-finally get a proper fix (`main` didn't have one as of this writing).
+finally get a proper fix.
+
+**Re-applied 2026-09-23** against 1.0.27 (up from 1.0.25) during a
+routine mod-update pass: `javap` confirmed `closeBuffers()`'s bytecode
+and constant-pool indices (`#13`, `#29`) are unchanged between the two
+versions, so `patch.py`'s existing hardcoded pattern matched without
+modification. `zip`'s update mode printed a `Local Entry CRC does not
+match CD` warning while patching — cosmetic, not real corruption:
+`python3 -c "zipfile.ZipFile(...).testzip()"` came back clean (`None`)
+and all 62 entries were readable. Deployed and boot-tested clean
+locally; not yet re-verified in-game (no player online to trigger a
+resource reload).
 
 ## Where the patched jar lives
 
-`automodpack/host-modpack/main/mods/spyglass_astronomy-1.0.25-mc26.1.2.jar`
+`automodpack/host-modpack/main/mods/spyglass_astronomy-1.0.27-mc26.1.2.jar`
 — replaces the unmodified jar of the same name/version. Client-only mod,
 so per AGENTS.md's convention the server needs a restart after swapping
 it (`generateModpackOnStart` only regenerates the manifest clients check
